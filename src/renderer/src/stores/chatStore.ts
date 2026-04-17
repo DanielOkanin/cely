@@ -76,6 +76,7 @@ interface TerminalState {
   createFeatureChatOnBranch: (featureId: string, branchName: string, baseBranch?: string) => Promise<void>
   toggleFeatureExpanded: (featureId: string) => void
   setShowFeatureCreation: (show: boolean) => void
+  quickCreateFeature: () => Promise<void>
   setFeatureBranchCreation: (data: { featureId: string; directory: string } | null) => void
   setConfirmCloseFeatureId: (id: string | null) => void
   renameTerminal: (id: string, title: string) => Promise<void>
@@ -175,7 +176,21 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   createTerminal: async () => {
-    // Show quick project picker instead of OS dialog
+    // If there's an active terminal, reuse its directory (one-click!)
+    const { activeTerminalId, terminals, selectedModel, selectedProvider } = get()
+    const active = terminals.find((t) => t.id === activeTerminalId)
+    if (active) {
+      const dir = active.sourceDirectory || active.workingDirectory
+      const terminal = await window.api.createTerminal(dir, selectedModel, selectedProvider)
+      set((state) => ({
+        terminals: [terminal, ...state.terminals],
+        activeTerminalId: terminal.id,
+        connectedTerminals: new Set([...state.connectedTerminals, terminal.id])
+      }))
+      window.api.setWindowTitle(terminal.title)
+      return
+    }
+    // No active terminal — show project picker
     set({ showProjectPicker: true })
   },
 
@@ -357,6 +372,24 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 
   setShowFeatureCreation: (show: boolean) => {
     set({ showFeatureCreation: show })
+  },
+
+  quickCreateFeature: async () => {
+    // If there's an active terminal, create a feature in the same repo (one-click!)
+    const { activeTerminalId, terminals } = get()
+    const active = terminals.find((t) => t.id === activeTerminalId)
+    if (active) {
+      const dir = active.sourceDirectory || active.workingDirectory
+      const name = dir.split('/').pop() || 'feature'
+      const feature = await window.api.createFeature(`New Feature — ${name}`, dir)
+      set((state) => ({
+        features: [feature, ...state.features],
+        expandedFeatures: new Set([...state.expandedFeatures, feature.id])
+      }))
+      return
+    }
+    // No active terminal — show the creation form
+    set({ showFeatureCreation: true })
   },
 
   setFeatureBranchCreation: (data: { featureId: string; directory: string } | null) => {

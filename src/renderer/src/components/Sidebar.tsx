@@ -338,7 +338,7 @@ export function Sidebar() {
     features, expandedFeatures, toggleFeatureExpanded, createFeature, closeFeature,
     createFeatureChat, showFeatureCreation, setShowFeatureCreation,
     featureBranchCreation, setFeatureBranchCreation, confirmCloseFeatureId, setConfirmCloseFeatureId,
-    showProjectPicker, setShowProjectPicker, createTerminalInDirQuick
+    showProjectPicker, setShowProjectPicker, createTerminalInDirQuick, quickCreateFeature
   } = useTerminalStore()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -687,7 +687,7 @@ export function Sidebar() {
                       <button
                         onClick={() => {
                           setShowNewChatDropdown(false)
-                          setShowFeatureCreation(true)
+                          quickCreateFeature()
                         }}
                         className="w-full px-3 py-2.5 text-left hover:bg-slate-700/50 transition-colors flex items-center gap-2"
                       >
@@ -696,7 +696,7 @@ export function Sidebar() {
                         </svg>
                         <div>
                           <div className="text-xs text-white font-medium">New Feature</div>
-                          <div className="text-[10px] text-slate-500">Group related chats together</div>
+                          <div className="text-[10px] text-slate-500">Same repo, one click</div>
                         </div>
                       </button>
                     </div>
