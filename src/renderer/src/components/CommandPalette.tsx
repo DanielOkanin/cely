@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useTerminalStore, AVAILABLE_MODELS } from '../stores/chatStore'
+import { useTerminalStore, getProviderById } from '../stores/chatStore'
 import { exportTerminalContent } from './Terminal'
 
 interface Command {
@@ -11,7 +11,7 @@ interface Command {
 }
 
 export function CommandPalette() {
-  const { showCommandPalette, setShowCommandPalette, terminals, activeTerminalId, createTerminal, deleteTerminal, setActiveTerminal } = useTerminalStore()
+  const { showCommandPalette, setShowCommandPalette, terminals, activeTerminalId, createTerminal, deleteTerminal, setActiveTerminal, setShowBranchCreation } = useTerminalStore()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -27,6 +27,19 @@ export function CommandPalette() {
       }
     ]
 
+    cmds.push({
+      id: 'new-chat-branch',
+      label: 'New Chat on New Branch',
+      description: 'Start a parallel chat on a new git branch',
+      icon: 'chat',
+      action: async () => {
+        setShowCommandPalette(false)
+        const activeTerminal = terminals.find((t) => t.id === activeTerminalId)
+        const dir = activeTerminal ? (activeTerminal.sourceDirectory || activeTerminal.workingDirectory) : await window.api.selectDirectory()
+        if (dir) setShowBranchCreation(true, dir)
+      }
+    })
+
     // Switch to chat commands
     terminals.forEach((t, i) => {
       cmds.push({
@@ -38,21 +51,25 @@ export function CommandPalette() {
       })
     })
 
-    // Model switch commands
+    // Model switch commands — only for providers that support it
     if (activeTerminalId) {
-      AVAILABLE_MODELS.forEach((model) => {
-        cmds.push({
-          id: `model-${model.id}`,
-          label: `Switch model: ${model.label}`,
-          description: model.description,
-          icon: 'model',
-          action: () => {
-            setShowCommandPalette(false)
-            window.api.writeTerminal(activeTerminalId, `/model ${model.id}\r`)
-            useTerminalStore.getState().updateModel(activeTerminalId, model.id)
-          }
+      const activeTerm = terminals.find((t) => t.id === activeTerminalId)
+      const termProvider = activeTerm ? getProviderById(activeTerm.provider) : null
+      if (termProvider?.capabilities.modelSwitchInSession) {
+        termProvider.models.forEach((model) => {
+          cmds.push({
+            id: `model-${model.id}`,
+            label: `Switch model: ${model.label}`,
+            description: model.description,
+            icon: 'model',
+            action: () => {
+              setShowCommandPalette(false)
+              window.api.writeTerminal(activeTerminalId, `/model ${model.id}\r`)
+              useTerminalStore.getState().updateModel(activeTerminalId, model.id)
+            }
+          })
         })
-      })
+      }
     }
 
     // Export current chat
@@ -84,7 +101,7 @@ export function CommandPalette() {
     }
 
     return cmds
-  }, [terminals, activeTerminalId, createTerminal, deleteTerminal, setActiveTerminal, setShowCommandPalette])
+  }, [terminals, activeTerminalId, createTerminal, deleteTerminal, setActiveTerminal, setShowCommandPalette, setShowBranchCreation])
 
   const filtered = useMemo(() => {
     if (!query) return commands

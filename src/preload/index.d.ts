@@ -1,4 +1,4 @@
-import type { TerminalSession, ContextUsageData } from '../main/types'
+import type { TerminalSession, ContextUsageData, Feature } from '../main/types'
 
 interface GitFileChange {
   status: string
@@ -9,16 +9,27 @@ interface GitFileChange {
 declare global {
   interface Window {
     api: {
-      createTerminal: (workingDirectory: string, model?: string) => Promise<TerminalSession>
+      createTerminal: (workingDirectory: string, model?: string, provider?: string) => Promise<TerminalSession>
+      createTerminalOnBranch: (sourceDir: string, branchName: string, baseBranch?: string, model?: string, provider?: string) => Promise<TerminalSession>
       listTerminals: () => Promise<TerminalSession[]>
-      deleteTerminal: (id: string) => Promise<void>
+      deleteTerminal: (id: string) => Promise<{ wasLastWorktreeSession: boolean; worktreePath?: string; sourceDirectory?: string; branchName?: string }>
       renameTerminal: (id: string, title: string) => Promise<void>
       reconnectTerminal: (id: string) => Promise<boolean>
       forkConversation: (sourceId: string) => Promise<TerminalSession | null>
       writeTerminal: (id: string, data: string) => void
       resizeTerminal: (id: string, cols: number, rows: number) => void
       setWindowTitle: (title: string) => void
+      // Features
+      createFeature: (name: string, directory: string) => Promise<Feature>
+      listFeatures: () => Promise<Feature[]>
+      renameFeature: (id: string, name: string) => Promise<void>
+      closeFeature: (id: string) => Promise<{ deletedSessionIds: string[] }>
+      createFeatureChat: (featureId: string, model?: string, provider?: string) => Promise<TerminalSession>
+      createFeatureChatOnBranch: (featureId: string, branchName: string, baseBranch?: string, model?: string, provider?: string) => Promise<TerminalSession>
+
       gitBranch: (cwd: string) => Promise<string | null>
+      listGitBranches: (cwd: string) => Promise<string[]>
+      cleanupWorktree: (sourceDir: string, worktreePath: string, deleteBranch: boolean) => Promise<void>
       gitStatus: (cwd: string) => Promise<GitFileChange[]>
       gitDiff: (cwd: string, filePath: string) => Promise<string | null>
       openDiffWindow: (cwd: string, filePath: string) => Promise<void>
@@ -49,6 +60,11 @@ declare global {
       onVoiceFinal: (callback: (text: string) => void) => () => void
       onVoiceError: (callback: (error: string) => void) => () => void
       onToggleExplorerShortcut: (callback: () => void) => () => void
+
+      // Web Remote
+      webRemoteStart: (port?: number) => Promise<{ port: number; token: string; url: string; qrDataUrl: string }>
+      webRemoteStop: () => Promise<void>
+      webRemoteStatus: () => Promise<{ running: boolean; port: number | null; connectedClients: number }>
     }
     webUtils: {
       getPathForFile: (file: File) => string

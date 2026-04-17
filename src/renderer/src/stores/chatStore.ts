@@ -1,12 +1,19 @@
 import { create } from 'zustand'
+import { PROVIDERS, getProviderById, inferProvider } from '../../../shared/providers'
+import type { AgentProviderId } from '../../../shared/providers'
 
-export const AVAILABLE_MODELS = [
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', description: 'Fast & capable' },
-  { id: 'claude-opus-4-6', label: 'Opus 4.6', description: 'Most intelligent' },
-  { id: 'claude-haiku-4-5', label: 'Haiku 4.5', description: 'Fastest' }
-]
+export { PROVIDERS, getProviderById, inferProvider }
+export type { AgentProviderId }
 
-export const DEFAULT_MODEL = 'claude-opus-4-6'
+export const DEFAULT_MODEL = PROVIDERS[0].defaultModel
+
+interface Feature {
+  id: string
+  name: string
+  directory: string
+  createdAt: number
+  updatedAt: number
+}
 
 interface TerminalSession {
   id: string
@@ -16,6 +23,10 @@ interface TerminalSession {
   workingDirectory: string
   model: string
   sessionId: string
+  provider: AgentProviderId
+  worktreePath?: string | null
+  sourceDirectory?: string | null
+  featureId?: string | null
 }
 
 interface TerminalState {
@@ -25,23 +36,45 @@ interface TerminalState {
   unreadTerminals: Set<string>
   typingTerminals: Set<string>
   recentlyReconnected: Set<string>
+  selectedProvider: AgentProviderId
   selectedModel: string
   searchQuery: string
   sidebarWidth: number
   filesPanelWidth: number
   showCommandPalette: boolean
   showPlanView: boolean
-  activeSidebarView: 'chats' | 'files'
+  activeSidebarView: 'chats' | 'files' | 'remote'
   expandedDirs: Set<string>
   previewFilePath: string | null
   forkingId: string | null
+  pendingWorktreeCleanup: { worktreePath: string; sourceDirectory: string; branchName?: string } | null
+  showBranchCreation: boolean
+  branchCreationDir: string | null
+  features: Feature[]
+  expandedFeatures: Set<string>
+  showFeatureCreation: boolean
+  featureBranchCreation: { featureId: string; directory: string } | null
+  confirmCloseFeatureId: string | null
 
   loadTerminals: () => Promise<void>
+  loadFeatures: () => Promise<void>
   setActiveTerminal: (id: string) => void
   createTerminal: () => Promise<void>
   createTerminalInDir: (dir: string) => Promise<void>
+  createTerminalOnBranch: (sourceDir: string, branchName: string, baseBranch?: string) => Promise<void>
   forkConversation: (sourceId: string) => Promise<void>
   deleteTerminal: (id: string) => Promise<void>
+  confirmWorktreeCleanup: (deleteBranch: boolean) => Promise<void>
+  setShowBranchCreation: (show: boolean, dir?: string | null) => void
+  createFeature: (name: string, directory: string) => Promise<void>
+  renameFeature: (id: string, name: string) => Promise<void>
+  closeFeature: (id: string) => Promise<void>
+  createFeatureChat: (featureId: string) => Promise<void>
+  createFeatureChatOnBranch: (featureId: string, branchName: string, baseBranch?: string) => Promise<void>
+  toggleFeatureExpanded: (featureId: string) => void
+  setShowFeatureCreation: (show: boolean) => void
+  setFeatureBranchCreation: (data: { featureId: string; directory: string } | null) => void
+  setConfirmCloseFeatureId: (id: string | null) => void
   renameTerminal: (id: string, title: string) => Promise<void>
   markConnected: (id: string) => void
   markDisconnected: (id: string) => void
@@ -51,6 +84,7 @@ interface TerminalState {
   clearTyping: (id: string) => void
   updateTitle: (id: string, title: string) => void
   updateSessionId: (id: string, sessionId: string) => void
+  setSelectedProvider: (provider: AgentProviderId) => void
   setSelectedModel: (model: string) => void
   updateModel: (id: string, model: string) => void
   setSearchQuery: (query: string) => void
@@ -58,7 +92,7 @@ interface TerminalState {
   setFilesPanelWidth: (width: number) => void
   setShowCommandPalette: (show: boolean) => void
   setShowPlanView: (show: boolean) => void
-  setActiveSidebarView: (view: 'chats' | 'files') => void
+  setActiveSidebarView: (view: 'chats' | 'files' | 'remote') => void
   toggleDirExpanded: (dirPath: string) => void
   setPreviewFile: (path: string | null) => void
   switchToIndex: (index: number) => void
@@ -71,6 +105,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   unreadTerminals: new Set(),
   typingTerminals: new Set(),
   recentlyReconnected: new Set(),
+  selectedProvider: 'claude' as AgentProviderId,
   selectedModel: DEFAULT_MODEL,
   searchQuery: '',
   sidebarWidth: 256,
@@ -81,6 +116,19 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   expandedDirs: new Set(),
   previewFilePath: null,
   forkingId: null,
+  pendingWorktreeCleanup: null,
+  showBranchCreation: false,
+  branchCreationDir: null,
+  features: [],
+  expandedFeatures: new Set(),
+  showFeatureCreation: false,
+  featureBranchCreation: null,
+  confirmCloseFeatureId: null,
+
+  loadFeatures: async () => {
+    const features = await window.api.listFeatures()
+    set({ features })
+  },
 
   loadTerminals: async () => {
     const terminals = await window.api.listTerminals()
@@ -125,8 +173,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   createTerminal: async () => {
     const dir = await window.api.selectDirectory()
     if (!dir) return
-    const { selectedModel } = get()
-    const terminal = await window.api.createTerminal(dir, selectedModel)
+    const { selectedModel, selectedProvider } = get()
+    const terminal = await window.api.createTerminal(dir, selectedModel, selectedProvider)
     set((state) => ({
       terminals: [terminal, ...state.terminals],
       activeTerminalId: terminal.id,
@@ -136,12 +184,25 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   createTerminalInDir: async (dir: string) => {
-    const { selectedModel } = get()
-    const terminal = await window.api.createTerminal(dir, selectedModel)
+    const { selectedModel, selectedProvider } = get()
+    const terminal = await window.api.createTerminal(dir, selectedModel, selectedProvider)
     set((state) => ({
       terminals: [terminal, ...state.terminals],
       activeTerminalId: terminal.id,
       connectedTerminals: new Set([...state.connectedTerminals, terminal.id])
+    }))
+    window.api.setWindowTitle(terminal.title)
+  },
+
+  createTerminalOnBranch: async (sourceDir: string, branchName: string, baseBranch?: string) => {
+    const { selectedModel, selectedProvider } = get()
+    const terminal = await window.api.createTerminalOnBranch(sourceDir, branchName, baseBranch, selectedModel, selectedProvider)
+    set((state) => ({
+      terminals: [terminal, ...state.terminals],
+      activeTerminalId: terminal.id,
+      connectedTerminals: new Set([...state.connectedTerminals, terminal.id]),
+      showBranchCreation: false,
+      branchCreationDir: null
     }))
     window.api.setWindowTitle(terminal.title)
   },
@@ -163,7 +224,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   deleteTerminal: async (id: string) => {
-    await window.api.deleteTerminal(id)
+    const result = await window.api.deleteTerminal(id)
     set((state) => {
       const terminals = state.terminals.filter((t) => t.id !== id)
       const connected = new Set(state.connectedTerminals)
@@ -178,7 +239,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
             ? terminals[0].id
             : null
           : state.activeTerminalId
-      return { terminals, activeTerminalId: newActiveId, connectedTerminals: connected, unreadTerminals: unread, typingTerminals: typing }
+      const pendingWorktreeCleanup = result.wasLastWorktreeSession
+        ? { worktreePath: result.worktreePath!, sourceDirectory: result.sourceDirectory!, branchName: result.branchName }
+        : null
+      return { terminals, activeTerminalId: newActiveId, connectedTerminals: connected, unreadTerminals: unread, typingTerminals: typing, pendingWorktreeCleanup }
     })
   },
 
@@ -187,6 +251,108 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set((state) => ({
       terminals: state.terminals.map((t) => (t.id === id ? { ...t, title } : t))
     }))
+  },
+
+  confirmWorktreeCleanup: async (deleteBranch: boolean) => {
+    const cleanup = get().pendingWorktreeCleanup
+    if (cleanup) {
+      await window.api.cleanupWorktree(cleanup.sourceDirectory, cleanup.worktreePath, deleteBranch)
+    }
+    set({ pendingWorktreeCleanup: null })
+  },
+
+  setShowBranchCreation: (show: boolean, dir?: string | null) => {
+    set({ showBranchCreation: show, branchCreationDir: dir ?? null })
+  },
+
+  createFeature: async (name: string, directory: string) => {
+    const feature = await window.api.createFeature(name, directory)
+    set((state) => ({
+      features: [feature, ...state.features],
+      showFeatureCreation: false,
+      expandedFeatures: new Set([...state.expandedFeatures, feature.id])
+    }))
+  },
+
+  renameFeature: async (id: string, name: string) => {
+    await window.api.renameFeature(id, name)
+    set((state) => ({
+      features: state.features.map((f) => (f.id === id ? { ...f, name } : f))
+    }))
+  },
+
+  closeFeature: async (id: string) => {
+    const result = await window.api.closeFeature(id)
+    set((state) => {
+      const deletedSet = new Set(result.deletedSessionIds)
+      const terminals = state.terminals.filter((t) => !deletedSet.has(t.id))
+      const connected = new Set(state.connectedTerminals)
+      const unread = new Set(state.unreadTerminals)
+      const typing = new Set(state.typingTerminals)
+      for (const sid of result.deletedSessionIds) {
+        connected.delete(sid)
+        unread.delete(sid)
+        typing.delete(sid)
+      }
+      const newActiveId = deletedSet.has(state.activeTerminalId || '')
+        ? (terminals.length > 0 ? terminals[0].id : null)
+        : state.activeTerminalId
+      return {
+        features: state.features.filter((f) => f.id !== id),
+        terminals,
+        activeTerminalId: newActiveId,
+        connectedTerminals: connected,
+        unreadTerminals: unread,
+        typingTerminals: typing,
+        confirmCloseFeatureId: null
+      }
+    })
+  },
+
+  createFeatureChat: async (featureId: string) => {
+    const { selectedModel, selectedProvider } = get()
+    const terminal = await window.api.createFeatureChat(featureId, selectedModel, selectedProvider)
+    if (!terminal) return
+    set((state) => ({
+      terminals: [terminal, ...state.terminals],
+      activeTerminalId: terminal.id,
+      connectedTerminals: new Set([...state.connectedTerminals, terminal.id])
+    }))
+    window.api.setWindowTitle(terminal.title)
+  },
+
+  createFeatureChatOnBranch: async (featureId: string, branchName: string, baseBranch?: string) => {
+    const { selectedModel, selectedProvider } = get()
+    const terminal = await window.api.createFeatureChatOnBranch(featureId, branchName, baseBranch, selectedModel, selectedProvider)
+    if (!terminal) return
+    set((state) => ({
+      terminals: [terminal, ...state.terminals],
+      activeTerminalId: terminal.id,
+      connectedTerminals: new Set([...state.connectedTerminals, terminal.id]),
+      featureBranchCreation: null
+    }))
+    window.api.setWindowTitle(terminal.title)
+  },
+
+  toggleFeatureExpanded: (featureId: string) => {
+    set((state) => {
+      const expanded = new Set(state.expandedFeatures)
+      if (expanded.has(featureId)) expanded.delete(featureId)
+      else expanded.add(featureId)
+      return { expandedFeatures: expanded }
+    })
+  },
+
+  setShowFeatureCreation: (show: boolean) => {
+    set({ showFeatureCreation: show })
+  },
+
+  setFeatureBranchCreation: (data: { featureId: string; directory: string } | null) => {
+    set({ featureBranchCreation: data })
+  },
+
+  setConfirmCloseFeatureId: (id: string | null) => {
+    set({ confirmCloseFeatureId: id })
   },
 
   markConnected: (id: string) => {
@@ -259,6 +425,11 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     }))
   },
 
+  setSelectedProvider: (provider: AgentProviderId) => {
+    const providerConfig = getProviderById(provider)
+    set({ selectedProvider: provider, selectedModel: providerConfig.defaultModel })
+  },
+
   setSelectedModel: (model: string) => {
     set({ selectedModel: model })
   },
@@ -289,7 +460,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set({ showPlanView: show })
   },
 
-  setActiveSidebarView: (view: 'chats' | 'files') => {
+  setActiveSidebarView: (view: 'chats' | 'files' | 'remote') => {
     set({ activeSidebarView: view })
   },
 

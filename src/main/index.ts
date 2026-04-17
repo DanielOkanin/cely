@@ -1,8 +1,9 @@
-import { app, shell, BrowserWindow, globalShortcut } from 'electron'
+import { app, shell, BrowserWindow, globalShortcut, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpcHandlers } from './ipc-handlers'
+import { WebRemoteServer } from './services/web-remote-server'
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -45,7 +46,22 @@ app.whenReady().then(() => {
   })
 
   const mainWindow = createWindow()
-  registerIpcHandlers(mainWindow)
+  const services = registerIpcHandlers(mainWindow)
+
+  // Web Remote Server
+  const webRemoteServer = new WebRemoteServer(services)
+
+  ipcMain.handle('web-remote:start', async (_event, port?: number) => {
+    return webRemoteServer.start(port ?? 3131)
+  })
+
+  ipcMain.handle('web-remote:stop', () => {
+    webRemoteServer.stop()
+  })
+
+  ipcMain.handle('web-remote:status', () => {
+    return webRemoteServer.getStatus()
+  })
 
   // Grant microphone access for voice input
   mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -66,6 +82,11 @@ app.whenReady().then(() => {
     mainWindow.webContents.send('shortcut:command-palette')
   })
 
+  // Cmd+Shift+E — toggle file explorer
+  globalShortcut.register('CommandOrControl+Shift+E', () => {
+    mainWindow.webContents.send('shortcut:toggle-explorer')
+  })
+
   // Cmd+1-9 — switch to chat by index
   for (let i = 1; i <= 9; i++) {
     globalShortcut.register(`CommandOrControl+${i}`, () => {
@@ -75,6 +96,11 @@ app.whenReady().then(() => {
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+
+  // Stop web remote server on quit
+  app.on('before-quit', () => {
+    webRemoteServer.stop()
   })
 })
 

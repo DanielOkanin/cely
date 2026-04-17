@@ -1,3 +1,5 @@
+import type { AgentProviderId } from './providers/types'
+
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
 
 export interface StreamingEvent {
@@ -10,6 +12,14 @@ export interface StreamingEvent {
   error?: string
 }
 
+export interface Feature {
+  id: string
+  name: string
+  directory: string
+  createdAt: number
+  updatedAt: number
+}
+
 export interface TerminalSession {
   id: string
   title: string
@@ -18,14 +28,13 @@ export interface TerminalSession {
   workingDirectory: string
   model: string
   sessionId: string
+  provider: AgentProviderId
+  worktreePath?: string | null
+  sourceDirectory?: string | null
+  featureId?: string | null
 }
 
-export const AVAILABLE_MODELS = [
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', description: 'Fast & capable' },
-  { id: 'claude-opus-4-6', label: 'Opus 4.6', description: 'Most intelligent' },
-  { id: 'claude-haiku-4-5', label: 'Haiku 4.5', description: 'Fastest' }
-]
-
+export const DEFAULT_PROVIDER: AgentProviderId = 'claude'
 export const DEFAULT_MODEL = 'claude-opus-4-6'
 
 export interface ContextUsageData {
@@ -35,9 +44,12 @@ export interface ContextUsageData {
 }
 
 export interface ElectronAPI {
-  createTerminal: (workingDirectory: string, model?: string) => Promise<TerminalSession>
+  createTerminal: (workingDirectory: string, model?: string, provider?: string) => Promise<TerminalSession>
+  createTerminalOnBranch: (sourceDir: string, branchName: string, baseBranch?: string, model?: string, provider?: string) => Promise<TerminalSession>
   listTerminals: () => Promise<TerminalSession[]>
-  deleteTerminal: (id: string) => Promise<void>
+  deleteTerminal: (id: string) => Promise<{ wasLastWorktreeSession: boolean; worktreePath?: string; sourceDirectory?: string; branchName?: string }>
+  listGitBranches: (cwd: string) => Promise<string[]>
+  cleanupWorktree: (sourceDir: string, worktreePath: string, deleteBranch: boolean) => Promise<void>
   renameTerminal: (id: string, title: string) => Promise<void>
   reconnectTerminal: (id: string) => Promise<void>
   writeTerminal: (id: string, data: string) => void
@@ -61,4 +73,9 @@ export interface ElectronAPI {
   onCloseTerminalShortcut: (callback: () => void) => () => void
   onCommandPaletteShortcut: (callback: () => void) => () => void
   onSwitchChatShortcut: (callback: (index: number) => void) => () => void
+
+  // Web Remote
+  webRemoteStart: (port?: number) => Promise<{ port: number; token: string; url: string; qrDataUrl: string }>
+  webRemoteStop: () => Promise<void>
+  webRemoteStatus: () => Promise<{ running: boolean; port: number | null; connectedClients: number }>
 }

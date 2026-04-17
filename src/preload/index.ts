@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 const api = {
-  createTerminal: (workingDirectory: string, model?: string) =>
-    ipcRenderer.invoke('terminal:create', workingDirectory, model),
+  createTerminal: (workingDirectory: string, model?: string, provider?: string) =>
+    ipcRenderer.invoke('terminal:create', workingDirectory, model, provider),
+  createTerminalOnBranch: (sourceDir: string, branchName: string, baseBranch?: string, model?: string, provider?: string) =>
+    ipcRenderer.invoke('terminal:create-on-branch', sourceDir, branchName, baseBranch, model, provider),
   listTerminals: () => ipcRenderer.invoke('terminal:list'),
   deleteTerminal: (id: string) => ipcRenderer.invoke('terminal:delete', id),
   renameTerminal: (id: string, title: string) =>
@@ -15,7 +17,20 @@ const api = {
     ipcRenderer.send('terminal:resize', id, cols, rows),
   setWindowTitle: (title: string) =>
     ipcRenderer.send('window:set-title', title),
+  // Features
+  createFeature: (name: string, directory: string) => ipcRenderer.invoke('feature:create', name, directory),
+  listFeatures: () => ipcRenderer.invoke('feature:list'),
+  renameFeature: (id: string, name: string) => ipcRenderer.invoke('feature:rename', id, name),
+  closeFeature: (id: string) => ipcRenderer.invoke('feature:close', id),
+  createFeatureChat: (featureId: string, model?: string, provider?: string) =>
+    ipcRenderer.invoke('feature:create-chat', featureId, model, provider),
+  createFeatureChatOnBranch: (featureId: string, branchName: string, baseBranch?: string, model?: string, provider?: string) =>
+    ipcRenderer.invoke('feature:create-chat-on-branch', featureId, branchName, baseBranch, model, provider),
+
   gitBranch: (cwd: string) => ipcRenderer.invoke('git:branch', cwd),
+  listGitBranches: (cwd: string) => ipcRenderer.invoke('git:list-branches', cwd),
+  cleanupWorktree: (sourceDir: string, worktreePath: string, deleteBranch: boolean) =>
+    ipcRenderer.invoke('worktree:cleanup', sourceDir, worktreePath, deleteBranch),
   gitStatus: (cwd: string) => ipcRenderer.invoke('git:status', cwd),
   gitDiff: (cwd: string, filePath: string) => ipcRenderer.invoke('git:diff', cwd, filePath),
   openDiffWindow: (cwd: string, filePath: string) => ipcRenderer.invoke('diff:open', cwd, filePath),
@@ -100,7 +115,12 @@ const api = {
     const handler = () => callback()
     ipcRenderer.on('shortcut:toggle-explorer', handler)
     return () => ipcRenderer.removeListener('shortcut:toggle-explorer', handler)
-  }
+  },
+
+  // Web Remote
+  webRemoteStart: (port?: number) => ipcRenderer.invoke('web-remote:start', port),
+  webRemoteStop: () => ipcRenderer.invoke('web-remote:stop'),
+  webRemoteStatus: () => ipcRenderer.invoke('web-remote:status')
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -1,6 +1,8 @@
 import * as pty from 'node-pty'
 import { homedir } from 'os'
 import { generateTitle } from './title-generator'
+import type { AgentProviderConfig } from '../providers/types'
+import { getProvider } from '../providers'
 
 interface TerminalSession {
   id: string
@@ -8,10 +10,13 @@ interface TerminalSession {
   workingDirectory: string
   inputBuffer: string
   titled: boolean
+  provider: AgentProviderConfig
 }
 
 export class TerminalService {
   private terminals = new Map<string, TerminalSession>()
+  private outputBuffers = new Map<string, string[]>()
+  private maxBufferSize = 65536
   private onTitleUpdate: ((id: string, title: string) => void) | null = null
 
   setTitleUpdateHandler(handler: (id: string, title: string) => void): void {
@@ -25,8 +30,10 @@ export class TerminalService {
     resume: boolean,
     sessionId: string,
     onData: (data: string) => void,
-    onExit: () => void
+    onExit: () => void,
+    providerId?: string
   ): void {
+    const provider = getProvider((providerId || 'claude') as any)
     const shell = process.env.SHELL || '/bin/zsh'
 
     // Build clean env without Claude Code session markers
@@ -39,13 +46,10 @@ export class TerminalService {
     cleanEnv.TERM = 'xterm-256color'
     cleanEnv.COLORTERM = 'truecolor'
 
-    // Launch shell with claude as the initial command (with model flag)
-    // When claude exits, the user drops back to a shell
-    // Use --session-id for new sessions, --resume for reconnecting
-    const claudeCmd = resume
-      ? `claude --resume ${sessionId}${model ? ` --model ${model}` : ''}`
-      : `claude${model ? ` --model ${model}` : ''} --session-id ${sessionId}`
-    const ptyProcess = pty.spawn(shell, ['-l', '-c', `${claudeCmd}; exec $SHELL -l`], {
+    // Launch shell with agent CLI as the initial command
+    // When agent exits, the user drops back to a shell
+    const agentCmd = provider.buildCommand(sessionId, model, resume)
+    const ptyProcess = pty.spawn(shell, ['-l', '-c', `${agentCmd}; exec $SHELL -l`], {
       name: 'xterm-256color',
       cols: 120,
       rows: 30,
@@ -57,11 +61,13 @@ export class TerminalService {
     // with the same session ID when they share a working directory
 
     ptyProcess.onData((data) => {
+      this.appendBuffer(id, data)
       onData(data)
     })
 
     ptyProcess.onExit(() => {
       this.terminals.delete(id)
+      // Keep the output buffer — don't delete it so reconnected sessions still have history
       onExit()
     })
 
@@ -70,7 +76,8 @@ export class TerminalService {
       ptyProcess,
       workingDirectory,
       inputBuffer: '',
-      titled: false
+      titled: false,
+      provider
     })
   }
 
@@ -95,7 +102,7 @@ export class TerminalService {
             this.onTitleUpdate(id, `${dirName} — ${fallback}`)
           }
           // Generate a better title asynchronously
-          generateTitle(message, dirName).then((title) => {
+          generateTitle(message, dirName, session.provider).then((title) => {
             if (this.onTitleUpdate) {
               this.onTitleUpdate(id, title)
             }
@@ -122,12 +129,28 @@ export class TerminalService {
     }
   }
 
+  getOutputBuffer(id: string): string {
+    const chunks = this.outputBuffers.get(id)
+    return chunks ? chunks.join('') : ''
+  }
+
+  private appendBuffer(id: string, data: string): void {
+    if (!this.outputBuffers.has(id)) this.outputBuffers.set(id, [])
+    const buf = this.outputBuffers.get(id)!
+    buf.push(data)
+    let total = buf.reduce((sum, chunk) => sum + chunk.length, 0)
+    while (total > this.maxBufferSize && buf.length > 1) {
+      total -= buf.shift()!.length
+    }
+  }
+
   destroy(id: string): void {
     const session = this.terminals.get(id)
     if (session) {
       session.ptyProcess.kill()
       this.terminals.delete(id)
     }
+    this.outputBuffers.delete(id)
   }
 
   destroyAll(): void {

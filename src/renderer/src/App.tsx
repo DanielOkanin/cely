@@ -1,12 +1,14 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Sidebar } from './components/Sidebar'
+import { ActivityBar } from './components/ActivityBar'
 import { TerminalView, setupTerminalDataHandler } from './components/Terminal'
 import { PlanView } from './components/PlanView'
 import { ChangedFilesPanel } from './components/ChangedFiles'
 import { CommandPalette } from './components/CommandPalette'
 import { VoiceInput } from './components/VoiceInput'
 import { DiffWindow } from './components/DiffWindow'
-import { useTerminalStore, AVAILABLE_MODELS } from './stores/chatStore'
+import { FilePreview } from './components/FilePreview'
+import { useTerminalStore, getProviderById, inferProvider } from './stores/chatStore'
 
 // If loaded with #/diff hash, render the diff window instead
 if (window.location.hash === '#/diff') {
@@ -45,20 +47,20 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
 }
 
 function getModelColor(modelId: string): string {
-  if (modelId.includes('opus')) return 'text-purple-400 bg-purple-400/15 border-purple-400/30'
-  if (modelId.includes('haiku')) return 'text-green-400 bg-green-400/15 border-green-400/30'
-  return 'text-blue-400 bg-blue-400/15 border-blue-400/30'
+  const provider = inferProvider(modelId)
+  return `${provider.color.text} ${provider.color.bg} ${provider.color.border}`
 }
 
 function getModelShortName(modelId: string): string {
-  if (modelId.includes('opus')) return 'Opus'
-  if (modelId.includes('haiku')) return 'Haiku'
-  return 'Sonnet'
+  const provider = inferProvider(modelId)
+  const model = provider.models.find((m) => m.id === modelId)
+  return model ? model.label : modelId
 }
 
 function getContextLimit(modelId: string): number {
-  if (modelId.includes('haiku')) return 200000
-  return 1000000
+  const provider = inferProvider(modelId)
+  const model = provider.models.find((m) => m.id === modelId)
+  return model?.contextWindow || 1_000_000
 }
 
 function formatTokens(n: number): string {
@@ -89,6 +91,10 @@ function ContextUsage() {
 
   if (!activeTerminal || !usage) return null
 
+  // Only show context usage for providers that support it
+  const termProvider = getProviderById(activeTerminal.provider)
+  if (!termProvider.capabilities.contextUsage) return null
+
   const model = usage.model || activeTerminal.model
   const limit = getContextLimit(model)
   const percent = Math.min(100, Math.round((usage.contextUsed / limit) * 100))
@@ -114,8 +120,13 @@ function ActiveModelSwitcher() {
   const activeTerminal = terminals.find((t) => t.id === activeTerminalId)
   if (!activeTerminal) return null
 
+  const termProvider = getProviderById(activeTerminal.provider)
+  const canSwitch = termProvider.capabilities.modelSwitchInSession
+  const providerModels = termProvider.models
+
   const switchModel = (modelId: string) => {
-    window.api.writeTerminal(activeTerminal.id, `/model ${modelId}\r`)
+    const switchCmd = termProvider.id === 'claude' ? `/model ${modelId}` : `/model ${modelId}`
+    window.api.writeTerminal(activeTerminal.id, `${switchCmd}\r`)
     useTerminalStore.getState().updateModel(activeTerminal.id, modelId)
     setOpen(false)
   }
@@ -123,23 +134,26 @@ function ActiveModelSwitcher() {
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen(!open)}
-        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium border transition-colors ${getModelColor(activeTerminal.model)}`}
+        onClick={() => canSwitch && setOpen(!open)}
+        className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium border transition-colors ${getModelColor(activeTerminal.model)} ${!canSwitch ? 'cursor-default' : ''}`}
+        title={canSwitch ? undefined : 'Model switching not supported for this provider'}
       >
         {getModelShortName(activeTerminal.model)}
-        <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
+        {canSwitch && (
+          <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        )}
       </button>
 
-      {open && (
+      {open && canSwitch && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-700/50 rounded-lg overflow-hidden z-50 shadow-xl w-48">
             <div className="px-3 py-1.5 text-[10px] text-slate-500 uppercase tracking-wider border-b border-slate-700/30">
               Switch model
             </div>
-            {AVAILABLE_MODELS.map((model) => (
+            {providerModels.map((model) => (
               <button
                 key={model.id}
                 onClick={() => switchModel(model.id)}
@@ -166,7 +180,20 @@ function ActiveModelSwitcher() {
 }
 
 function TerminalArea({ showFiles, onToggleFiles }: { showFiles: boolean; onToggleFiles: () => void }) {
-  const { terminals, activeTerminalId, createTerminal, showPlanView, setShowPlanView } = useTerminalStore()
+  const { terminals, activeTerminalId, createTerminal, showPlanView, setShowPlanView, previewFilePath } = useTerminalStore()
+  const activeTerminal = terminals.find((t) => t.id === activeTerminalId)
+  const activeProvider = activeTerminal ? getProviderById(activeTerminal.provider) : null
+  const [activeBranch, setActiveBranch] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!activeTerminal) { setActiveBranch(null); return }
+    const fetchBranch = () => {
+      window.api.gitBranch(activeTerminal.workingDirectory).then(setActiveBranch)
+    }
+    fetchBranch()
+    const interval = setInterval(fetchBranch, 5000)
+    return () => clearInterval(interval)
+  }, [activeTerminal?.id, activeTerminal?.workingDirectory])
 
   if (terminals.length === 0) {
     return (
@@ -179,7 +206,7 @@ function TerminalArea({ showFiles, onToggleFiles }: { showFiles: boolean; onTogg
           </div>
           <h2 className="text-base font-semibold text-slate-400 mb-2">Start a new chat</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
-            Each chat runs Claude in your project directory with full capabilities.
+            Each chat runs an AI agent in your project directory with full terminal access and tool use.
           </p>
           <button
             onClick={createTerminal}
@@ -206,14 +233,30 @@ function TerminalArea({ showFiles, onToggleFiles }: { showFiles: boolean; onTogg
     <div className="flex-1 flex flex-col min-w-0 bg-[#0f172a]">
       {/* Top bar */}
       <div className="flex items-center justify-between border-b border-slate-800 bg-[#0d1526] shrink-0 pt-7" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-        <div className="flex-1 min-w-0 px-3 py-2">
-          <h1 className="text-sm font-medium text-slate-300">
-            {terminals.find((t) => t.id === activeTerminalId)?.title || ''}
+        <div className="flex-1 min-w-0 px-3 py-2 flex items-center gap-2">
+          <h1 className="text-sm font-medium text-slate-300 truncate">
+            {activeTerminal?.title || ''}
           </h1>
+          {activeBranch && (
+            <div className={`flex items-center gap-1 shrink-0 px-1.5 py-0.5 rounded-md ${
+              activeTerminal?.worktreePath
+                ? 'bg-emerald-400/10 text-emerald-400/80'
+                : 'bg-slate-800 text-slate-500'
+            }`}>
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-2.564a4.5 4.5 0 00-1.242-7.244l-4.5-4.5a4.5 4.5 0 00-6.364 6.364L4.25 8.81" />
+              </svg>
+              <span className="text-[11px] font-medium">{activeBranch}</span>
+              {activeTerminal?.worktreePath && (
+                <span className="text-[9px] opacity-70">worktree</span>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3 px-3 py-2 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <ContextUsage />
           <ActiveModelSwitcher />
+          {activeProvider?.capabilities.plans && (
           <Tooltip label="Plans">
             <button
               onClick={() => setShowPlanView(!showPlanView)}
@@ -226,6 +269,7 @@ function TerminalArea({ showFiles, onToggleFiles }: { showFiles: boolean; onTogg
               </svg>
             </button>
           </Tooltip>
+          )}
           <Tooltip label="Changed Files">
             <button
               onClick={onToggleFiles}
@@ -260,6 +304,7 @@ function TerminalArea({ showFiles, onToggleFiles }: { showFiles: boolean; onTogg
             <PlanView />
           </div>
         )}
+        {previewFilePath && <FilePreview />}
       </div>
     </div>
   )
@@ -312,13 +357,14 @@ function ResizableFilesPanel({ showFiles, onToggleFiles }: { showFiles: boolean;
 
 function App() {
   const {
-    loadTerminals, createTerminal, markDisconnected,
+    loadTerminals, loadFeatures, createTerminal, markDisconnected,
     updateTitle, updateSessionId, activeTerminalId, terminals, setShowCommandPalette, switchToIndex
   } = useTerminalStore()
   const [showFiles, setShowFiles] = useState(false)
 
   useEffect(() => {
     loadTerminals()
+    loadFeatures()
 
     const unsubData = setupTerminalDataHandler()
 
@@ -347,6 +393,12 @@ function App() {
       switchToIndex(index)
     })
 
+    // Cmd+Shift+E — toggle file explorer
+    const unsubExplorer = window.api.onToggleExplorerShortcut(() => {
+      const { activeSidebarView, setActiveSidebarView } = useTerminalStore.getState()
+      setActiveSidebarView(activeSidebarView === 'files' ? 'chats' : 'files')
+    })
+
     return () => {
       unsubData()
       unsubExit()
@@ -355,6 +407,7 @@ function App() {
       unsubShortcut()
       unsubPalette()
       unsubSwitch()
+      unsubExplorer()
     }
   }, [])
 
@@ -366,12 +419,13 @@ function App() {
         window.api.setWindowTitle(terminal.title)
       }
     } else {
-      window.api.setWindowTitle('Claude')
+      window.api.setWindowTitle('Claudia')
     }
   }, [activeTerminalId, terminals])
 
   return (
     <div className="flex h-screen bg-slate-900 text-white">
+      <ActivityBar />
       <Sidebar />
       <TerminalArea showFiles={showFiles} onToggleFiles={() => setShowFiles(!showFiles)} />
       <ResizableFilesPanel showFiles={showFiles} onToggleFiles={() => setShowFiles(!showFiles)} />
