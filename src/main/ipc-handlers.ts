@@ -505,6 +505,32 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): AppServices {
 
   ipcMain.handle('fs:open-file', (_event, filePath: string) => shell.openPath(filePath))
 
+  // --- Pinned/Recent Projects ---
+
+  ipcMain.handle('projects:pin', (_event, directory: string, name?: string) => {
+    return chatStore.pinProject(directory, name)
+  })
+
+  ipcMain.handle('projects:unpin', (_event, id: string) => {
+    chatStore.unpinProject(id)
+  })
+
+  ipcMain.handle('projects:unpin-by-dir', (_event, directory: string) => {
+    chatStore.unpinProjectByDir(directory)
+  })
+
+  ipcMain.handle('projects:list-pinned', () => {
+    return chatStore.listPinnedProjects()
+  })
+
+  ipcMain.handle('projects:list-recent', (_event, limit?: number) => {
+    return chatStore.getRecentDirectories(limit || 10)
+  })
+
+  ipcMain.handle('projects:is-pinned', (_event, directory: string) => {
+    return chatStore.isPinned(directory)
+  })
+
   ipcMain.handle('dialog:select-directory', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || result.filePaths.length === 0) return null

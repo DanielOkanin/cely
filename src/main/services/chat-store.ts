@@ -59,6 +59,16 @@ export class ChatStore {
       this.db.exec(`ALTER TABLE terminal_sessions ADD COLUMN feature_id TEXT`)
     }
 
+    // Pinned projects table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS pinned_projects (
+        id TEXT PRIMARY KEY,
+        directory TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `)
+
     // Features table
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS features (
@@ -228,5 +238,50 @@ export class ChatStore {
 
   deleteFeature(id: string): void {
     this.db.prepare('DELETE FROM features WHERE id = ?').run(id)
+  }
+
+  // --- Pinned Projects ---
+
+  pinProject(directory: string, name?: string): { id: string; directory: string; name: string; createdAt: number } {
+    const id = uuidv4()
+    const now = Date.now()
+    const displayName = name || directory.split('/').pop() || directory
+    this.db
+      .prepare('INSERT OR IGNORE INTO pinned_projects (id, directory, name, created_at) VALUES (?, ?, ?, ?)')
+      .run(id, directory, displayName, now)
+    return { id, directory, name: displayName, createdAt: now }
+  }
+
+  unpinProject(id: string): void {
+    this.db.prepare('DELETE FROM pinned_projects WHERE id = ?').run(id)
+  }
+
+  unpinProjectByDir(directory: string): void {
+    this.db.prepare('DELETE FROM pinned_projects WHERE directory = ?').run(directory)
+  }
+
+  listPinnedProjects(): { id: string; directory: string; name: string; createdAt: number }[] {
+    const rows = this.db
+      .prepare('SELECT * FROM pinned_projects ORDER BY created_at ASC')
+      .all() as any[]
+    return rows.map((r) => ({ id: r.id, directory: r.directory, name: r.name, createdAt: r.created_at }))
+  }
+
+  isPinned(directory: string): boolean {
+    const row = this.db.prepare('SELECT id FROM pinned_projects WHERE directory = ?').get(directory)
+    return !!row
+  }
+
+  getRecentDirectories(limit: number = 10): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT working_directory, MAX(updated_at) as last_used
+         FROM terminal_sessions
+         GROUP BY working_directory
+         ORDER BY last_used DESC
+         LIMIT ?`
+      )
+      .all(limit) as { working_directory: string }[]
+    return rows.map((r) => r.working_directory)
   }
 }

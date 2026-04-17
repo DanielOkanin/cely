@@ -48,6 +48,13 @@ const api = {
   readFileContent: (filePath: string, maxBytes?: number) =>
     ipcRenderer.invoke('fs:read-file-content', filePath, maxBytes),
   openFile: (filePath: string) => ipcRenderer.invoke('fs:open-file', filePath),
+  // Projects
+  pinProject: (directory: string, name?: string) => ipcRenderer.invoke('projects:pin', directory, name),
+  unpinProject: (id: string) => ipcRenderer.invoke('projects:unpin', id),
+  unpinProjectByDir: (directory: string) => ipcRenderer.invoke('projects:unpin-by-dir', directory),
+  listPinnedProjects: () => ipcRenderer.invoke('projects:list-pinned'),
+  listRecentProjects: (limit?: number) => ipcRenderer.invoke('projects:list-recent', limit),
+  isProjectPinned: (directory: string) => ipcRenderer.invoke('projects:is-pinned', directory),
   selectDirectory: () => ipcRenderer.invoke('dialog:select-directory'),
   onTerminalData: (callback: (id: string, data: string) => void) => {
     const handler = (_event: any, id: string, data: string) => callback(id, data)

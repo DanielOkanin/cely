@@ -3,6 +3,7 @@ import { useTerminalStore, PROVIDERS, getProviderById, inferProvider } from '../
 import { formatRelativeTime } from '../utils/time'
 import { FileExplorer } from './FileExplorer'
 import { WebRemotePanel } from './WebRemotePanel'
+import { QuickProjectPicker } from './QuickProjectPicker'
 
 function getModelShortName(modelId: string): string {
   const provider = inferProvider(modelId)
@@ -336,7 +337,8 @@ export function Sidebar() {
     pendingWorktreeCleanup, confirmWorktreeCleanup, showBranchCreation, branchCreationDir, setShowBranchCreation,
     features, expandedFeatures, toggleFeatureExpanded, createFeature, closeFeature,
     createFeatureChat, showFeatureCreation, setShowFeatureCreation,
-    featureBranchCreation, setFeatureBranchCreation, confirmCloseFeatureId, setConfirmCloseFeatureId
+    featureBranchCreation, setFeatureBranchCreation, confirmCloseFeatureId, setConfirmCloseFeatureId,
+    showProjectPicker, setShowProjectPicker, createTerminalInDirQuick
   } = useTerminalStore()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -701,6 +703,14 @@ export function Sidebar() {
                   </>
                 )}
               </div>
+
+              {/* Quick Project Picker */}
+              {showProjectPicker && (
+                <QuickProjectPicker
+                  onSelect={(dir) => createTerminalInDirQuick(dir)}
+                  onCancel={() => setShowProjectPicker(false)}
+                />
+              )}
             </div>
 
             {/* Feature creation form */}

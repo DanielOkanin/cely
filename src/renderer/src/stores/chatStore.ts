@@ -50,6 +50,7 @@ interface TerminalState {
   pendingWorktreeCleanup: { worktreePath: string; sourceDirectory: string; branchName?: string } | null
   showBranchCreation: boolean
   branchCreationDir: string | null
+  showProjectPicker: boolean
   features: Feature[]
   expandedFeatures: Set<string>
   showFeatureCreation: boolean
@@ -65,6 +66,8 @@ interface TerminalState {
   forkConversation: (sourceId: string) => Promise<void>
   deleteTerminal: (id: string) => Promise<void>
   confirmWorktreeCleanup: (deleteBranch: boolean) => Promise<void>
+  setShowProjectPicker: (show: boolean) => void
+  createTerminalInDirQuick: (dir: string) => Promise<void>
   setShowBranchCreation: (show: boolean, dir?: string | null) => void
   createFeature: (name: string, directory: string) => Promise<void>
   renameFeature: (id: string, name: string) => Promise<void>
@@ -119,6 +122,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   pendingWorktreeCleanup: null,
   showBranchCreation: false,
   branchCreationDir: null,
+  showProjectPicker: false,
   features: [],
   expandedFeatures: new Set(),
   showFeatureCreation: false,
@@ -171,14 +175,22 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   createTerminal: async () => {
-    const dir = await window.api.selectDirectory()
-    if (!dir) return
+    // Show quick project picker instead of OS dialog
+    set({ showProjectPicker: true })
+  },
+
+  setShowProjectPicker: (show: boolean) => {
+    set({ showProjectPicker: show })
+  },
+
+  createTerminalInDirQuick: async (dir: string) => {
     const { selectedModel, selectedProvider } = get()
     const terminal = await window.api.createTerminal(dir, selectedModel, selectedProvider)
     set((state) => ({
       terminals: [terminal, ...state.terminals],
       activeTerminalId: terminal.id,
-      connectedTerminals: new Set([...state.connectedTerminals, terminal.id])
+      connectedTerminals: new Set([...state.connectedTerminals, terminal.id]),
+      showProjectPicker: false
     }))
     window.api.setWindowTitle(terminal.title)
   },

@@ -64,6 +64,13 @@ export interface ElectronAPI {
   getDiffData: () => Promise<{ filePath: string; oldContent: string; newContent: string; cwd: string }>
   switchDiffFile: (filePath: string) => Promise<void>
   getContextUsage: (sessionId: string, workingDirectory: string) => Promise<ContextUsageData | null>
+  // Projects
+  pinProject: (directory: string, name?: string) => Promise<{ id: string; directory: string; name: string; createdAt: number }>
+  unpinProject: (id: string) => Promise<void>
+  unpinProjectByDir: (directory: string) => Promise<void>
+  listPinnedProjects: () => Promise<{ id: string; directory: string; name: string; createdAt: number }[]>
+  listRecentProjects: (limit?: number) => Promise<string[]>
+  isProjectPinned: (directory: string) => Promise<boolean>
   selectDirectory: () => Promise<string | null>
   onTerminalData: (callback: (id: string, data: string) => void) => () => void
   onTerminalExit: (callback: (id: string) => void) => () => void

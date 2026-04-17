@@ -41,6 +41,13 @@ declare global {
       readDirectory: (dirPath: string) => Promise<Array<{ name: string; path: string; isDirectory: boolean }>>
       readFileContent: (filePath: string, maxBytes?: number) => Promise<{ content: string; isBinary: boolean; truncated: boolean }>
       openFile: (filePath: string) => Promise<string>
+      // Projects
+      pinProject: (directory: string, name?: string) => Promise<{ id: string; directory: string; name: string; createdAt: number }>
+      unpinProject: (id: string) => Promise<void>
+      unpinProjectByDir: (directory: string) => Promise<void>
+      listPinnedProjects: () => Promise<{ id: string; directory: string; name: string; createdAt: number }[]>
+      listRecentProjects: (limit?: number) => Promise<string[]>
+      isProjectPinned: (directory: string) => Promise<boolean>
       selectDirectory: () => Promise<string | null>
       onTerminalData: (callback: (id: string, data: string) => void) => () => void
       onTerminalExit: (callback: (id: string) => void) => () => void
