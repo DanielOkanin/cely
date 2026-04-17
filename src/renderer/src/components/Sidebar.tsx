@@ -402,10 +402,96 @@ export function Sidebar() {
     )
   }, [terminals, searchQuery, branches])
 
+  // --- Repo → Features → Chats hierarchy ---
+  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set())
+
+  interface RepoGroup {
+    directory: string
+    name: string
+    features: Array<{ feature: typeof features[0]; sessions: typeof filtered }>
+    ungroupedSessions: typeof filtered
+  }
+
+  const repoGroups = useMemo((): RepoGroup[] => {
+    // Get unique root directories (sourceDirectory or workingDirectory)
+    const repoMap = new Map<string, RepoGroup>()
+
+    // First, register all feature directories as repos
+    for (const feature of features) {
+      const dir = feature.directory
+      if (!repoMap.has(dir)) {
+        repoMap.set(dir, {
+          directory: dir,
+          name: dir.split('/').pop() || dir,
+          features: [],
+          ungroupedSessions: []
+        })
+      }
+      const sessions = filtered.filter((t) => t.featureId === feature.id)
+      repoMap.get(dir)!.features.push({ feature, sessions })
+    }
+
+    // Then, group ungrouped sessions by their root directory
+    for (const t of filtered) {
+      if (t.featureId) continue
+      const dir = t.sourceDirectory || t.workingDirectory
+      if (!repoMap.has(dir)) {
+        repoMap.set(dir, {
+          directory: dir,
+          name: dir.split('/').pop() || dir,
+          features: [],
+          ungroupedSessions: []
+        })
+      }
+      repoMap.get(dir)!.ungroupedSessions.push(t)
+    }
+
+    // Sort repos: most recently used first
+    const groups = Array.from(repoMap.values())
+    groups.sort((a, b) => {
+      const aLatest = Math.max(
+        ...a.ungroupedSessions.map((s) => s.updatedAt),
+        ...a.features.flatMap((f) => f.sessions.map((s) => s.updatedAt)),
+        0
+      )
+      const bLatest = Math.max(
+        ...b.ungroupedSessions.map((s) => s.updatedAt),
+        ...b.features.flatMap((f) => f.sessions.map((s) => s.updatedAt)),
+        0
+      )
+      return bLatest - aLatest
+    })
+
+    return groups
+  }, [filtered, features])
+
+  // Auto-expand repos that contain the active terminal
+  useEffect(() => {
+    if (!activeTerminalId) return
+    const active = terminals.find((t) => t.id === activeTerminalId)
+    if (!active) return
+    const dir = active.sourceDirectory || active.workingDirectory
+    setExpandedRepos((prev) => {
+      if (prev.has(dir)) return prev
+      const next = new Set(prev)
+      next.add(dir)
+      return next
+    })
+  }, [activeTerminalId])
+
+  const toggleRepoExpanded = (dir: string) => {
+    setExpandedRepos((prev) => {
+      const next = new Set(prev)
+      if (next.has(dir)) next.delete(dir)
+      else next.add(dir)
+      return next
+    })
+  }
+
+  // Keep old references for dialogs
   const { featureGroups, ungrouped } = useMemo(() => {
     const featureGroups: Array<{ feature: typeof features[0]; sessions: typeof filtered }> = []
     const ungrouped: typeof filtered = []
-
     for (const feature of features) {
       const sessions = filtered.filter((t) => t.featureId === feature.id)
       featureGroups.push({ feature, sessions })
@@ -729,7 +815,7 @@ export function Sidebar() {
               />
             )}
 
-            {/* Chat list */}
+            {/* Chat list — Repo → Features → Chats hierarchy */}
             <div className="flex-1 overflow-y-auto px-3 py-1.5">
               {filtered.length === 0 && (
                 <div className="px-4 py-8 text-center">
@@ -746,86 +832,133 @@ export function Sidebar() {
                 </div>
               )}
 
-              {/* Feature groups */}
-              {featureGroups.map(({ feature, sessions }) => {
-                const isExpanded = expandedFeatures.has(feature.id)
+              {repoGroups.map((repo) => {
+                const isRepoExpanded = expandedRepos.has(repo.directory)
+                const totalSessions = repo.ungroupedSessions.length + repo.features.reduce((sum, f) => sum + f.sessions.length, 0)
+
                 return (
-                  <div key={feature.id} className="mb-1">
-                    {/* Feature header */}
-                    <div className="group/fh flex items-center gap-1.5 py-1.5 pr-1">
+                  <div key={repo.directory} className="mb-2">
+                    {/* Repo header */}
+                    <div className="group/repo flex items-center gap-1.5 py-1.5 pr-1">
                       <button
-                        onClick={() => toggleFeatureExpanded(feature.id)}
+                        onClick={() => toggleRepoExpanded(repo.directory)}
                         className="flex items-center gap-1.5 flex-1 min-w-0 text-left hover:bg-slate-800/30 rounded px-1 py-0.5 transition-colors"
                       >
-                        <svg className={`w-2.5 h-2.5 text-slate-500 transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <svg className={`w-2.5 h-2.5 text-slate-500 transition-transform shrink-0 ${isRepoExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                         </svg>
-                        <svg className="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                        <svg className="w-3.5 h-3.5 text-blue-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
                         </svg>
-                        <span className="text-[12px] text-slate-200 font-semibold truncate">{feature.name}</span>
-                        <span className="text-[10px] text-slate-600 shrink-0 ml-auto">{sessions.length}</span>
+                        <span className="text-[12px] text-slate-100 font-semibold truncate">{repo.name}</span>
+                        <span className="text-[10px] text-slate-600 shrink-0 ml-auto">{totalSessions}</span>
                       </button>
-                      <div className="flex gap-0.5 opacity-0 group-hover/fh:opacity-100 transition-opacity shrink-0">
+                      {/* Repo actions on hover */}
+                      <div className="flex gap-0.5 opacity-0 group-hover/repo:opacity-100 transition-opacity shrink-0">
                         <button
-                          onClick={() => createFeatureChat(feature.id)}
+                          onClick={() => {
+                            const { selectedModel, selectedProvider } = useTerminalStore.getState()
+                            window.api.createTerminal(repo.directory, selectedModel, selectedProvider).then((terminal) => {
+                              useTerminalStore.setState((state) => ({
+                                terminals: [terminal, ...state.terminals],
+                                activeTerminalId: terminal.id,
+                                connectedTerminals: new Set([...state.connectedTerminals, terminal.id])
+                              }))
+                              window.api.setWindowTitle(terminal.title)
+                            })
+                          }}
                           className="w-5 h-5 rounded text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 flex items-center justify-center"
-                          title="New chat"
+                          title="New chat in this repo"
                         >
                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                           </svg>
                         </button>
-                        <button
-                          onClick={() => setFeatureBranchCreation({ featureId: feature.id, directory: feature.directory })}
-                          className="w-5 h-5 rounded text-slate-500 hover:text-emerald-400 hover:bg-emerald-400/10 flex items-center justify-center"
-                          title="New chat on branch"
-                        >
-                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-2.564a4.5 4.5 0 00-1.242-7.244l-4.5-4.5a4.5 4.5 0 00-6.364 6.364L4.25 8.81" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => setConfirmCloseFeatureId(feature.id)}
-                          className="w-5 h-5 rounded text-slate-500 hover:text-red-400 hover:bg-red-400/10 flex items-center justify-center"
-                          title="Close feature"
-                        >
-                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
                       </div>
                     </div>
 
-                    {/* Branch creation form for this feature */}
-                    {featureBranchCreation?.featureId === feature.id && (
-                      <BranchCreationForm
-                        sourceDir={featureBranchCreation.directory}
-                        onCancel={() => setFeatureBranchCreation(null)}
-                        featureId={feature.id}
-                      />
-                    )}
+                    {isRepoExpanded && (
+                      <div className="pl-3">
+                        {/* Features inside this repo */}
+                        {repo.features.map(({ feature, sessions }) => {
+                          const isFeatureExp = expandedFeatures.has(feature.id)
+                          return (
+                            <div key={feature.id} className="mb-0.5">
+                              {/* Feature header */}
+                              <div className="group/fh flex items-center gap-1.5 py-1 pr-1">
+                                <button
+                                  onClick={() => toggleFeatureExpanded(feature.id)}
+                                  className="flex items-center gap-1.5 flex-1 min-w-0 text-left hover:bg-slate-800/30 rounded px-1 py-0.5 transition-colors"
+                                >
+                                  <svg className={`w-2 h-2 text-slate-500 transition-transform shrink-0 ${isFeatureExp ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                  </svg>
+                                  <svg className="w-3 h-3 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                                  </svg>
+                                  <span className="text-[11px] text-slate-300 font-medium truncate">{feature.name}</span>
+                                  <span className="text-[10px] text-slate-600 shrink-0 ml-auto">{sessions.length}</span>
+                                </button>
+                                <div className="flex gap-0.5 opacity-0 group-hover/fh:opacity-100 transition-opacity shrink-0">
+                                  <button
+                                    onClick={() => createFeatureChat(feature.id)}
+                                    className="w-4 h-4 rounded text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 flex items-center justify-center"
+                                    title="New chat"
+                                  >
+                                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => setFeatureBranchCreation({ featureId: feature.id, directory: feature.directory })}
+                                    className="w-4 h-4 rounded text-slate-500 hover:text-emerald-400 hover:bg-emerald-400/10 flex items-center justify-center"
+                                    title="New chat on branch"
+                                  >
+                                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-2.564a4.5 4.5 0 00-1.242-7.244l-4.5-4.5a4.5 4.5 0 00-6.364 6.364L4.25 8.81" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmCloseFeatureId(feature.id)}
+                                    className="w-4 h-4 rounded text-slate-500 hover:text-red-400 hover:bg-red-400/10 flex items-center justify-center"
+                                    title="Close feature"
+                                  >
+                                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
 
-                    {/* Sessions */}
-                    {isExpanded && sessions.map((t) => renderSessionRow(t))}
-                    {isExpanded && sessions.length === 0 && (
-                      <div className="px-4 py-2 text-[11px] text-slate-600 italic">No chats yet</div>
+                              {/* Branch creation form for this feature */}
+                              {featureBranchCreation?.featureId === feature.id && (
+                                <BranchCreationForm
+                                  sourceDir={featureBranchCreation.directory}
+                                  onCancel={() => setFeatureBranchCreation(null)}
+                                  featureId={feature.id}
+                                />
+                              )}
+
+                              {/* Feature sessions */}
+                              {isFeatureExp && (
+                                <div className="pl-3">
+                                  {sessions.map((t) => renderSessionRow(t))}
+                                  {sessions.length === 0 && (
+                                    <div className="px-3 py-1.5 text-[10px] text-slate-600 italic">No chats yet</div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+
+                        {/* Ungrouped sessions in this repo */}
+                        {repo.ungroupedSessions.map((t) => renderSessionRow(t))}
+                      </div>
                     )}
                   </div>
                 )
               })}
-
-              {/* Ungrouped sessions */}
-              {ungrouped.length > 0 && (
-                <div className="mb-1">
-                  {featureGroups.length > 0 && (
-                    <div className="py-1.5 px-1">
-                      <span className="text-[10px] text-slate-600 uppercase tracking-wider font-medium">Ungrouped</span>
-                    </div>
-                  )}
-                  {ungrouped.map((t) => renderSessionRow(t))}
-                </div>
-              )}
             </div>
 
             {/* Footer */}
