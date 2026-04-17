@@ -13,12 +13,36 @@ import type { AgentProviderId } from './providers/types'
 import type { TerminalListener, AppServices } from './services/web-remote-server'
 
 import { AgentCollabService } from './services/agent-collab'
+import { CollabOrchestrator } from './services/collab-orchestrator'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): AppServices {
   const chatStore = new ChatStore()
   const terminalService = new TerminalService()
   const worktreeService = new WorktreeService()
   const collabService = new AgentCollabService()
+  const collabOrchestrator = new CollabOrchestrator(terminalService)
+
+  // Wire orchestrator events to renderer
+  collabOrchestrator.on('turn:complete', (sessionId, turn) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('collab:orchestrator-turn', sessionId, turn)
+    }
+  })
+  collabOrchestrator.on('planning:max-rounds', (sessionId) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('collab:orchestrator-max-rounds', sessionId)
+    }
+  })
+  collabOrchestrator.on('plan:approved', (sessionId, plan) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('collab:orchestrator-approved', sessionId, plan)
+    }
+  })
+  collabOrchestrator.on('message:sent', (sessionId, agentId, message) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('collab:orchestrator-sent', sessionId, agentId, message)
+    }
+  })
 
   // --- Terminal event broadcasting ---
   const terminalListeners: TerminalListener[] = []
@@ -34,6 +58,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): AppServices {
   function broadcastData(id: string, data: string): void {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('terminal:data', id, data)
     for (const l of terminalListeners) l.onData(id, data)
+    // Feed to collab orchestrator
+    collabOrchestrator.onAgentOutput(id, data)
   }
 
   function broadcastExit(id: string): void {
@@ -568,6 +594,41 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): AppServices {
 
   ipcMain.handle('collab:delete', (_event, sessionId: string) => {
     collabService.deleteSession(sessionId)
+  })
+
+  // --- Collab Orchestrator (v2) ---
+
+  ipcMain.handle('collab-v2:create', (_event, name: string, agentIds: string[], maxRounds?: number) => {
+    const agents = agentIds.map((id) => {
+      const chat = chatStore.getChat(id)
+      const provider = chat ? getProvider(chat.provider) : null
+      return { id, label: `${provider?.displayName || 'Agent'} (${chat?.title || id})` }
+    })
+    return collabOrchestrator.createSession(name, agents, maxRounds)
+  })
+
+  ipcMain.handle('collab-v2:start', (_event, sessionId: string, prompt: string) => {
+    collabOrchestrator.startPlanning(sessionId, prompt)
+  })
+
+  ipcMain.handle('collab-v2:intervene', (_event, sessionId: string, message: string) => {
+    collabOrchestrator.userIntervene(sessionId, message)
+  })
+
+  ipcMain.handle('collab-v2:approve', (_event, sessionId: string) => {
+    collabOrchestrator.approvePlan(sessionId)
+  })
+
+  ipcMain.handle('collab-v2:get', (_event, sessionId: string) => {
+    return collabOrchestrator.getSession(sessionId)
+  })
+
+  ipcMain.handle('collab-v2:list', () => {
+    return collabOrchestrator.listSessions()
+  })
+
+  ipcMain.handle('collab-v2:delete', (_event, sessionId: string) => {
+    collabOrchestrator.deleteSession(sessionId)
   })
 
   // --- Pinned/Recent Projects ---

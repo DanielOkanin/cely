@@ -72,6 +72,30 @@ const api = {
     return () => ipcRenderer.removeListener('collab:approved', handler)
   },
 
+  // Collab Orchestrator v2
+  collabV2Create: (name: string, agentIds: string[], maxRounds?: number) => ipcRenderer.invoke('collab-v2:create', name, agentIds, maxRounds),
+  collabV2Start: (sessionId: string, prompt: string) => ipcRenderer.invoke('collab-v2:start', sessionId, prompt),
+  collabV2Intervene: (sessionId: string, message: string) => ipcRenderer.invoke('collab-v2:intervene', sessionId, message),
+  collabV2Approve: (sessionId: string) => ipcRenderer.invoke('collab-v2:approve', sessionId),
+  collabV2Get: (sessionId: string) => ipcRenderer.invoke('collab-v2:get', sessionId),
+  collabV2List: () => ipcRenderer.invoke('collab-v2:list'),
+  collabV2Delete: (sessionId: string) => ipcRenderer.invoke('collab-v2:delete', sessionId),
+  onCollabV2Turn: (callback: (sessionId: string, turn: any) => void) => {
+    const handler = (_event: any, sessionId: string, turn: any) => callback(sessionId, turn)
+    ipcRenderer.on('collab:orchestrator-turn', handler)
+    return () => ipcRenderer.removeListener('collab:orchestrator-turn', handler)
+  },
+  onCollabV2MaxRounds: (callback: (sessionId: string) => void) => {
+    const handler = (_event: any, sessionId: string) => callback(sessionId)
+    ipcRenderer.on('collab:orchestrator-max-rounds', handler)
+    return () => ipcRenderer.removeListener('collab:orchestrator-max-rounds', handler)
+  },
+  onCollabV2Approved: (callback: (sessionId: string, plan: string) => void) => {
+    const handler = (_event: any, sessionId: string, plan: string) => callback(sessionId, plan)
+    ipcRenderer.on('collab:orchestrator-approved', handler)
+    return () => ipcRenderer.removeListener('collab:orchestrator-approved', handler)
+  },
+
   // Projects
   pinProject: (directory: string, name?: string) => ipcRenderer.invoke('projects:pin', directory, name),
   unpinProject: (id: string) => ipcRenderer.invoke('projects:unpin', id),
