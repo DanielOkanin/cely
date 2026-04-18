@@ -80,7 +80,7 @@ export function WebRemotePanel() {
         </div>
 
         <p className="text-[11px] text-slate-400 leading-relaxed mb-4">
-          Access Claudia from your phone. Start the server and scan the QR code on the same WiFi network.
+          Access Cely from your phone. Start the server and scan the QR code on the same WiFi network.
         </p>
 
         {/* Port input */}

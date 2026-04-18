@@ -419,7 +419,7 @@ function App() {
         window.api.setWindowTitle(terminal.title)
       }
     } else {
-      window.api.setWindowTitle('Claudia')
+      window.api.setWindowTitle('Cely')
     }
   }, [activeTerminalId, terminals])
 

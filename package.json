@@ -1,15 +1,15 @@
 {
-  "name": "claude-chat-app",
+  "name": "cely",
   "version": "1.0.0",
-  "description": "A desktop chat app for Claude Code with multi-session terminals, model switching, and file diffs",
+  "description": "Cely — a desktop app for managing multiple AI coding agents (Claude, Cursor) with multi-session terminals, collaboration, and diffs",
   "main": "./out/main/index.js",
   "author": "Daniel Ok",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/danielok/claude-chat-app"
+    "url": "https://github.com/DanielOkanin/cely"
   },
-  "homepage": "https://github.com/danielok/claude-chat-app",
+  "homepage": "https://github.com/DanielOkanin/cely",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",

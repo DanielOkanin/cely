@@ -27,7 +27,7 @@ function LoginScreen() {
               <path strokeLinecap="round" strokeLinejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-white">Claudia</h1>
+          <h1 className="text-2xl font-bold text-white">Cely</h1>
         </div>
         <p className="text-sm text-slate-400 text-center mb-6">
           Enter the connection token from your desktop app, or scan the QR code.
@@ -649,7 +649,7 @@ function MainApp() {
         {/* Title */}
         <div className="flex-1 min-w-0">
           <h1 className="text-sm font-medium text-white truncate">
-            {activeSession?.title || 'Claudia Remote'}
+            {activeSession?.title || 'Cely Remote'}
           </h1>
           {activeSession && (
             <div className="flex items-center gap-2 mt-0.5">

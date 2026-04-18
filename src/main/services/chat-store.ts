@@ -8,7 +8,7 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../types'
 import type { AgentProviderId } from '../providers/types'
 import { inferProvider, getProvider } from '../providers'
 
-const DB_DIR = join(homedir(), '.claude-chat-app')
+const DB_DIR = join(homedir(), '.cely')
 const DB_PATH = join(DB_DIR, 'terminals.db')
 
 export class ChatStore {

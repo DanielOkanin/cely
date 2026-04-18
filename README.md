@@ -1,6 +1,8 @@
-# Claude Chat App
+# Cely
 
-A desktop chat application for Claude Code with multi-session terminals, model switching, and file diffs. Built with Electron, React, and the Claude Agent SDK.
+**Cely** (like CLI ⚡) — a desktop app for managing multiple AI coding agents. Run Claude Code + Cursor side by side, collaborate between agents, and ship faster.
+
+Built with Electron, React, and the Claude Agent SDK.
 
 ## Features
 

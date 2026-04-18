@@ -28,7 +28,7 @@ export interface CollabState {
 /**
  * Orchestrates multi-agent collaboration.
  * 
- * Sally watches terminal output from the active agent,
+ * Cely watches terminal output from the active agent,
  * detects when it's done (idle timeout + prompt detection),
  * extracts the response, and forwards to the next agent.
  */

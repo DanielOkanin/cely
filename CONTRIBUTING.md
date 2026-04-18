@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in contributing to Claude Chat App! Here's how to get started.
+Thanks for your interest in contributing to Cely! Here's how to get started.
 
 ## Development Setup
 

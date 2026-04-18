@@ -1,5 +1,5 @@
 appId: com.electron.app
-productName: Claudia
+productName: Cely
 directories:
   buildResources: build
 files:
@@ -12,7 +12,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: claude-chat-app
+  executableName: cely
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
